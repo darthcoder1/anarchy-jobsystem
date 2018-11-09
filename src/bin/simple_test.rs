@@ -1,13 +1,13 @@
 extern crate anarchy_jobsystem;
 
-
-pub struct Foo {
-    i : i32,
-}
+use anarchy_jobsystem::scheduler;
 
 fn main() {
-    let a = Foo { i : 10 };
+    
+    let job_sched = scheduler::initialize_scheduler(4);
 
-    println!("Hello World. {}", a.i);
+    scheduler::shutdown_scheduler(job_sched);
+    
+    println!("Hello World."); 
     
 }
