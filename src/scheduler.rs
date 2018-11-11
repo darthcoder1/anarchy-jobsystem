@@ -1,6 +1,6 @@
 use std::thread;
 use std::time::Duration;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Condvar};
 use std::sync::atomic::{AtomicBool,AtomicIsize,Ordering};
 
 pub struct JobFence {
@@ -69,6 +69,10 @@ struct JobController {
     // Vector of ready to run jobs (jobs with all dependencies signaled)
     ready_to_run : Mutex<Vec<JobInfo>>,
 
+    // signals that there are jobs to be processed
+    jobs_available : Condvar,
+    jobs_available_mtx : Mutex<i32>,
+
     // Indicates if the job threads should exit
     exit_threads : AtomicBool,
 }
@@ -86,15 +90,28 @@ impl JobController {
             pending_jobs : Mutex::new(vec![]),
             ready_to_run: Mutex::new(vec![]),
             exit_threads: AtomicBool::new(false),
+            jobs_available: Condvar::new(),
+            jobs_available_mtx: Mutex::new(0),
         }
     }
 
-    fn update_ready_to_run_jobs(&self) {
-        let mut all_jobs = self.pending_jobs.lock().unwrap();
-        let mut ready_jobs = all_jobs.drain_filter(|x| x.is_ready_to_run() ).collect::<Vec<_>>();
+    fn update_ready_to_run_jobs(&self) 
+    {
+        let mut ready_jobs_count = 0;
+        {
+            let mut all_jobs = self.pending_jobs.lock().unwrap();
+            let mut ready_jobs = all_jobs.drain_filter(|x| x.is_ready_to_run() ).collect::<Vec<_>>();
 
-        let mut ready_job_list = self.ready_to_run.lock().unwrap();
-        ready_job_list.append(& mut ready_jobs);
+            {
+                let mut ready_job_list = self.ready_to_run.lock().unwrap();
+                ready_job_list.append(& mut ready_jobs);
+                ready_jobs_count = ready_job_list.len();
+            }
+        }
+
+        if ready_jobs_count > 0 {
+            self.jobs_available.notify_all();
+        }
     }
 
     fn get_next_action(&self) -> JobControllerStatus {
@@ -106,7 +123,8 @@ impl JobController {
         }
         else if job_list.len() > 0 {
             JobControllerStatus::ExecuteJob(job_list.pop().unwrap())
-        } else {
+        }
+        else {
             JobControllerStatus::WaitForJob
         }
     }
@@ -130,6 +148,7 @@ pub fn initialize_scheduler(num_job_threads : i32) -> JobScheduler {
 pub fn shutdown_scheduler(sched : JobScheduler) {
 
     sched.controller.exit_threads.store(true, Ordering::Relaxed);
+    sched.controller.jobs_available.notify_all();
 
     for thread in sched.threads {
         thread.join().unwrap();
@@ -180,8 +199,7 @@ fn scheduler_thread_function(controller : & JobController, thread_idx : i32) {
                 controller.update_ready_to_run_jobs();
             },
             JobControllerStatus::WaitForJob => {
-                thread::sleep(Duration::from_millis(0));
-                // TODO: fall asleep until jobs are in queue
+                controller.jobs_available.wait(controller.ready_to_run.lock().unwrap());
                 controller.update_ready_to_run_jobs();
             },
             JobControllerStatus::ExitRequested => break,
