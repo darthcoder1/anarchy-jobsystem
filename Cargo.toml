@@ -1,6 +1,6 @@
 [package]
 name = "anarchy-jobsystem"
 version = "0.1.0"
-authors = ["martinz"]
+authors = ["Martin Zielinski <darthcoder1@gmail.com>"]
 
 [dependencies]
