@@ -318,4 +318,37 @@ mod tests {
 
         scheduler::shutdown_scheduler(sched);
     }
+
+    #[test]
+    fn JobScheduler_ExecutesChain_A_BC_D_EFG_H(){
+
+        let mut sched = scheduler::initialize_scheduler(4);
+
+        let callId = Arc::new(AtomicIsize::new(0));
+
+        let job_start = Arc::new(scheduler::JobFence::new(true));
+
+        let jobA = sched.schedule_job(& [job_start], "Job A", scheduler::test_job_function_expected_call_id(callId.clone(), 0));
+        let jobB = sched.schedule_job(& [jobA.clone()], "Job B", scheduler::test_job_function_expected_call_id_range(callId.clone(), 1, 3));
+        let jobC = sched.schedule_job(& [jobA.clone()], "Job C", scheduler::test_job_function_expected_call_id_range(callId.clone(), 1, 3));
+        let jobD = sched.schedule_job(& [jobB.clone(), jobC.clone()], "Job D", scheduler::test_job_function_expected_call_id(callId.clone(), 3));
+        let jobE = sched.schedule_job(& [jobD.clone()], "Job E", scheduler::test_job_function_expected_call_id_range(callId.clone(), 4, 7));
+        let jobF = sched.schedule_job(& [jobD.clone()], "Job F", scheduler::test_job_function_expected_call_id_range(callId.clone(), 4, 7));
+        let jobG = sched.schedule_job(& [jobD.clone()], "Job G", scheduler::test_job_function_expected_call_id_range(callId.clone(), 4, 7));
+        let jobH = sched.schedule_job(& [jobE.clone(), jobF.clone(), jobG.clone()], "Job G", scheduler::test_job_function_expected_call_id(callId.clone(), 7));
+        
+        assert!(jobH.wait(Duration::from_secs(1)));
+        assert!(jobH.is_signaled());
+        assert!(jobA.is_signaled());
+        assert!(jobB.is_signaled());
+        assert!(jobC.is_signaled());
+        assert!(jobD.is_signaled());
+        assert!(jobE.is_signaled());
+        assert!(jobF.is_signaled());
+        assert!(jobG.is_signaled());
+        
+        assert_eq!(8, callId.load(Ordering::Relaxed));
+
+        scheduler::shutdown_scheduler(sched);
+    }
 }
