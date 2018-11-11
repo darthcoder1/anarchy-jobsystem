@@ -1,6 +1,6 @@
 
 use std::thread;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::AtomicBool;
 
 pub struct JobFence {
@@ -9,7 +9,8 @@ pub struct JobFence {
 
 pub struct JobScheduler{
     threads : Vec<thread::JoinHandle<()>>,
-    pending_jobs : Vec<JobInfo>
+    pending_jobs : Vec<JobInfo>,
+    dispatcher : Arc<JobDispatcher>
 }
 
 struct JobInfo {
@@ -18,15 +19,48 @@ struct JobInfo {
     out_fence : Arc<JobFence>,
 }
 
+
+struct JobDispatcher {
+    ready_to_run : Vec<JobInfo>,
+    lock : Mutex<i32>
+}
+
+impl JobDispatcher {
+
+    fn new() -> JobDispatcher {
+        JobDispatcher {
+            ready_to_run: vec![],
+            lock: Mutex::new(0),
+        }
+    }
+
+    fn push_job_to_run(& mut self, job : JobInfo) {
+        let _guard = self.lock();
+        self.ready_to_run.push(job);
+    }
+
+    fn pull_job_to_run(& mut self) -> Result<JobInfo, ()> {
+        let _guard = self.lock();
+        
+        if self.ready_to_run.len() > 0 {
+            Ok(self.ready_to_run.pop().unwrap())
+        } else {
+            Err(())
+        }
+    }
+}
+
 pub fn initialize_scheduler(num_job_threads : i32) -> JobScheduler {
 
     let mut sched = JobScheduler {
         threads : vec![],
-        pending_jobs : vec![]
+        pending_jobs : vec![],
+        dispatcher: Arc::new(JobDispatcher::new()),
     };
 
     for i in 0..num_job_threads {
-        sched.threads.push(thread::spawn(move || { scheduler_thread_function(i); } ));
+        let dispatcher = sched.dispatcher.clone();
+        sched.threads.push(thread::spawn(move || { scheduler_thread_function(dispatcher, i); } ));
     }
 
     sched
@@ -57,8 +91,9 @@ impl JobScheduler {
 
 
 
-fn scheduler_thread_function(thread_idx : i32) {
+fn scheduler_thread_function(dispatcher : Arc<JobDispatcher>, thread_idx : i32) {
     println!("Spawn Thread {}", thread_idx);
 
+    
     println!("Kill Thread {}", thread_idx);
 }
