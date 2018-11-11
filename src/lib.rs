@@ -1,11 +1,4 @@
 #![feature(drain_filter)]
+#[allow(non_snake_case)]
 
 pub mod scheduler;
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
-}
